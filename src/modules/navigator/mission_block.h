@@ -114,6 +114,11 @@ protected:
 	 */
 	void set_land_item(struct mission_item_s *item, bool at_current_location);
 
+	/**
+	 * Set a precland mission item
+	 */
+	void set_precland_item(struct mission_item_s *item);
+
 	void set_current_position_item(struct mission_item_s *item);
 
 	/**

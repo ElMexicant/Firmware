@@ -716,6 +716,13 @@ MissionBlock::set_land_item(struct mission_item_s *item, bool at_current_locatio
 }
 
 void
+MissionBlock::set_precland_item(struct mission_item_s *item)
+{
+/* TODO: fill out necessary information for precland item, more params may be needed */
+item->nav_cmd = NAV_CMD_LAND_LOCAL;
+}
+
+void
 MissionBlock::set_current_position_item(struct mission_item_s *item)
 {
 	item->nav_cmd = NAV_CMD_WAYPOINT;

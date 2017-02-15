@@ -122,8 +122,8 @@ void PreclandBeaconEst::_cycle()
 		_R_att = matrix::Dcm<float>(q_att);
 		sensor_ray = _R_att * sensor_ray;
 
-		if (std::abs(sensor_ray(2)) < 1e-6) {
-			PX4_WARN("z component unsafe: %f %f %f", sensor_ray(0), sensor_ray(1), sensor_ray(2));
+		if (abs(sensor_ray(2)) < 1e-6) {
+			PX4_WARN("z component unsafe: %f %f %f", (double)sensor_ray(0), (double)sensor_ray(1), (double)sensor_ray(2));
 		}
 
 		// scale the ray s.t. the z component has length of HAGL

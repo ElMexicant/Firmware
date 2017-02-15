@@ -71,11 +71,12 @@
 #include "gpsfailure.h"
 #include "rcloss.h"
 #include "geofence.h"
+#include "precland.h"
 
 /**
  * Number of navigation modes that need on_active/on_inactive calls
  */
-#define NAVIGATOR_MODE_ARRAY_SIZE 10
+#define NAVIGATOR_MODE_ARRAY_SIZE 11
 
 class Navigator : public control::SuperBlock
 {
@@ -288,6 +289,7 @@ private:
 	EngineFailure	_engineFailure;			/**< class that handles the engine failure mode
 							  (FW only!) */
 	GpsFailure	_gpsFailure;			/**< class that handles the OBC gpsfailure loss mode */
+	PrecLand	_precland;
 
 	FollowTarget _follow_target;
 

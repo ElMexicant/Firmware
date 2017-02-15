@@ -153,6 +153,7 @@ Navigator::Navigator() :
 	_dataLinkLoss(this, "DLL"),
 	_engineFailure(this, "EF"),
 	_gpsFailure(this, "GPSF"),
+	_precland(this, "PRECLAND"),
 	_follow_target(this, "TAR"),
 	_param_loiter_radius(this, "LOITER_RAD"),
 	_param_acceptance_radius(this, "ACC_RAD"),
@@ -177,6 +178,7 @@ Navigator::Navigator() :
 	_navigation_mode_array[7] = &_takeoff;
 	_navigation_mode_array[8] = &_land;
 	_navigation_mode_array[9] = &_follow_target;
+	_navigation_mode_array[10] = &_precland;
 
 	updateParams();
 }
