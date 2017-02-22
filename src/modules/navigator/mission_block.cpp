@@ -718,8 +718,22 @@ MissionBlock::set_land_item(struct mission_item_s *item, bool at_current_locatio
 void
 MissionBlock::set_precland_item(struct mission_item_s *item)
 {
-/* TODO: fill out necessary information for precland item, more params may be needed */
-item->nav_cmd = NAV_CMD_LAND_LOCAL;
+	/* TODO: fill out necessary information for precland item, more params may be needed */
+
+	/* VTOL transition to RW before landing */
+	if (_navigator->get_vstatus()->is_vtol && !_navigator->get_vstatus()->is_rotary_wing) {
+		struct vehicle_command_s cmd = {};
+		cmd.command = NAV_CMD_DO_VTOL_TRANSITION;
+		cmd.param1 = vtol_vehicle_status_s::VEHICLE_VTOL_STATE_MC;
+		if (_cmd_pub != nullptr) {
+			orb_publish(ORB_ID(vehicle_command), _cmd_pub, &cmd);
+		} else {
+			_cmd_pub = orb_advertise_queue(ORB_ID(vehicle_command), &cmd, vehicle_command_s::ORB_QUEUE_LENGTH);
+		}
+	}
+
+	/* set as land local item */
+	item->nav_cmd = NAV_CMD_LAND_LOCAL;
 }
 
 void

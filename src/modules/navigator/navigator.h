@@ -281,15 +281,15 @@ private:
 	Mission		_mission;			/**< class that handles the missions */
 	Loiter		_loiter;			/**< class that handles loiter */
 	Takeoff		_takeoff;			/**< class for handling takeoff commands */
-	Land		_land;			/**< class for handling land commands */
+	Land		_land;				/**< class for handling land commands */
 	RTL 		_rtl;				/**< class that handles RTL */
-	RCLoss 		_rcLoss;				/**< class that handles RTL according to
+	RCLoss 		_rcLoss;			/**< class that handles RTL according to
 							  OBC rules (rc loss mode) */
 	DataLinkLoss	_dataLinkLoss;			/**< class that handles the OBC datalink loss mode */
 	EngineFailure	_engineFailure;			/**< class that handles the engine failure mode
 							  (FW only!) */
 	GpsFailure	_gpsFailure;			/**< class that handles the OBC gpsfailure loss mode */
-	PrecLand	_precland;
+	PrecLand	_precland;			/**< class that handles the precision landing */
 
 	FollowTarget _follow_target;
 
