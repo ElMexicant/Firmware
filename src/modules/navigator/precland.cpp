@@ -62,6 +62,20 @@ PrecLand::on_activation()
 {
 	/* set currect mission item to precland */
 	set_precland_item(&_mission_item);
+	_navigator->get_mission_result()->reached = false;
+	_navigator->get_mission_result()->finished = false;
+	_navigator->set_mission_result_updated();
+	reset_mission_item_reached();
+
+	/* read beacon position item into current setpoint */
+	struct position_setpoint_triplet_s *pos_sp_triplet = _navigator->get_position_setpoint_triplet();
+	pos_sp_triplet->previous.valid = false;
+	//mission_item_to_position_setpoint(&_mission_item, &pos_sp_triplet->current);
+	pos_sp_triplet->next.valid = false;
+
+	_navigator->set_can_loiter_at_sp(false);
+
+	_navigator->set_position_setpoint_triplet_updated();
 }
 
 void
