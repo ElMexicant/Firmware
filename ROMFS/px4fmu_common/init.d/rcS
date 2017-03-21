@@ -692,6 +692,9 @@ then
 		px4flow start &
 	fi
 
+	# irlock driver
+	irlock start
+
 	# Start MAVLink
 	mavlink start -r 800000 -d /dev/ttyACM0 -m config -x
 
@@ -975,6 +978,9 @@ then
 		fi
 
 	fi
+
+	# start beacon estimator(temporary place)
+	beacon_position_estimator start
 
 # End of autostart
 fi

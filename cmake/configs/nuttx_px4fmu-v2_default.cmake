@@ -27,9 +27,9 @@ set(config_module_list
 	#drivers/srf02
 	drivers/sf0x
 	drivers/ll40ls
-	drivers/trone
+	#drivers/trone
 	drivers/gps
-	drivers/pwm_out_sim
+	#drivers/pwm_out_sim
 	#drivers/hott
 	#drivers/hott/hott_telemetry
 	#drivers/hott/hott_sensors
@@ -97,10 +97,10 @@ set(config_module_list
 	#
 	# Estimation modules
 	#
-	#modules/attitude_estimator_q
+	modules/attitude_estimator_q
 	#modules/position_estimator_inav
-	#modules/local_position_estimator
-	modules/ekf2
+	modules/local_position_estimator
+	#modules/ekf2
 	modules/beacon_position_estimator
 
 	#
@@ -116,7 +116,7 @@ set(config_module_list
 	# Logging
 	#
 	modules/logger
-	#modules/sdlog2
+	modules/sdlog2
 
 	#
 	# Library modules
