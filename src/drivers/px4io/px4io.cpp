@@ -1204,6 +1204,30 @@ PX4IO::task_main()
 
 				(void)io_reg_set(PX4IO_PAGE_SETUP, PX4IO_P_SETUP_PWM_REVERSE, pwm_invert_mask);
 
+				// update trim values
+				struct pwm_output_values pwm_values;
+
+//				memset(&pwm_values, 0, sizeof(pwm_values));
+//				ret = io_reg_get(PX4IO_PAGE_CONTROL_TRIM_PWM, 0, (uint16_t *)pwm_values.values, _max_actuators);
+
+				for (unsigned i = 0; i < _max_actuators; i++) {
+					char pname[16];
+					float pval;
+
+					/* fetch the trim values from parameters */
+					sprintf(pname, "PWM_MAIN_TRIM%u", i + 1);
+					param_t param_h = param_find(pname);
+
+					if (param_h != PARAM_INVALID) {
+
+						param_get(param_h, &pval);
+						pwm_values.values[i] = (int16_t)(10000 * pval);
+					}
+				}
+
+				/* copy values to registers in IO */
+				ret = io_reg_set(PX4IO_PAGE_CONTROL_TRIM_PWM, 0, pwm_values.values, _max_actuators);
+
 				float param_val;
 				param_t parm_handle;
 
@@ -1269,6 +1293,14 @@ PX4IO::task_main()
 						(void)io_reg_modify(PX4IO_PAGE_SETUP, PX4IO_P_SETUP_FEATURES,
 								    (PX4IO_P_SETUP_FEATURES_SBUS1_OUT | PX4IO_P_SETUP_FEATURES_SBUS2_OUT), 0);
 					}
+				}
+
+				/* thrust to pwm modelling factor */
+				parm_handle = param_find("THR_MDL_FAC");
+
+				if (parm_handle != PARAM_INVALID) {
+					param_get(parm_handle, &param_val);
+					(void)io_reg_set(PX4IO_PAGE_SETUP, PX4IO_P_SETUP_THR_MDL_FAC, FLOAT_TO_REG(param_val));
 				}
 
 				/* maximum motor pwm slew rate */
@@ -1430,11 +1462,11 @@ PX4IO::io_set_arming_state()
 
 		_armed = armed.armed;
 
-		if (armed.lockdown && !_lockdown_override) {
+		if ((armed.lockdown || armed.manual_lockdown) && !_lockdown_override) {
 			set |= PX4IO_P_SETUP_ARMING_LOCKDOWN;
 			_lockdown_override = true;
 
-		} else if (!armed.lockdown && _lockdown_override) {
+		} else if (!(armed.lockdown || armed.manual_lockdown) && _lockdown_override) {
 			clear |= PX4IO_P_SETUP_ARMING_LOCKDOWN;
 			_lockdown_override = false;
 		}
@@ -2022,9 +2054,7 @@ PX4IO::io_publish_pwm_outputs()
 	/* get mixer status flags from IO */
 	uint16_t mixer_status;
 	ret = io_reg_get(PX4IO_PAGE_STATUS, PX4IO_P_STATUS_MIXER, &mixer_status, sizeof(mixer_status) / sizeof(uint16_t));
-	motor_limits.lower_limit = mixer_status & PX4IO_P_STATUS_MIXER_LOWER_LIMIT;
-	motor_limits.upper_limit = mixer_status & PX4IO_P_STATUS_MIXER_UPPER_LIMIT;
-	motor_limits.yaw = mixer_status & PX4IO_P_STATUS_MIXER_YAW_LIMIT;
+	motor_limits.saturation_status = mixer_status;
 
 	if (ret != OK) {
 		return ret;
@@ -2680,6 +2710,33 @@ PX4IO::ioctl(file *filep, int cmd, unsigned long arg)
 			pwm->channel_count = _max_actuators;
 
 			ret = io_reg_get(PX4IO_PAGE_CONTROL_MAX_PWM, 0, pwm->values, _max_actuators);
+
+			if (ret != OK) {
+				ret = -EIO;
+			}
+		}
+
+		break;
+
+	case PWM_SERVO_SET_TRIM_PWM: {
+			struct pwm_output_values *pwm = (struct pwm_output_values *)arg;
+
+			if (pwm->channel_count > _max_actuators)
+				/* fail with error */
+			{
+				return -E2BIG;
+			}
+
+			/* copy values to registers in IO */
+			ret = io_reg_set(PX4IO_PAGE_CONTROL_TRIM_PWM, 0, pwm->values, pwm->channel_count);
+			break;
+		}
+
+	case PWM_SERVO_GET_TRIM_PWM: {
+			struct pwm_output_values *pwm = (struct pwm_output_values *)arg;
+			pwm->channel_count = _max_actuators;
+
+			ret = io_reg_get(PX4IO_PAGE_CONTROL_TRIM_PWM, 0, pwm->values, _max_actuators);
 
 			if (ret != OK) {
 				ret = -EIO;
@@ -3345,7 +3402,6 @@ checkcrc(int argc, char *argv[])
 		exit(1);
 	}
 
-	warnx("CRCs match");
 	exit(0);
 }
 
@@ -3650,28 +3706,15 @@ px4io_main(int argc, char *argv[])
 		}
 
 		PX4IO_Uploader *up;
-		const char *fn[4];
 
-		/* work out what we're uploading... */
+		/* Assume we are using default paths */
+
+		const char *fn[4] = PX4IO_FW_SEARCH_PATHS;
+
+		/* Override defaults if a path is passed on command line */
 		if (argc > 2) {
 			fn[0] = argv[2];
 			fn[1] = nullptr;
-
-		} else {
-#if defined(CONFIG_ARCH_BOARD_PX4FMU_V1)
-			fn[0] = "/etc/extras/px4io-v1.bin";
-			fn[1] =	"/fs/microsd/px4io1.bin";
-			fn[2] =	"/fs/microsd/px4io.bin";
-			fn[3] =	nullptr;
-#elif defined(CONFIG_ARCH_BOARD_PX4FMU_V2) || \
-	  defined(CONFIG_ARCH_BOARD_AUAV_X21)
-			fn[0] = "/etc/extras/px4io-v2.bin";
-			fn[1] =	"/fs/microsd/px4io2.bin";
-			fn[2] =	"/fs/microsd/px4io.bin";
-			fn[3] =	nullptr;
-#else
-#error "unknown board"
-#endif
 		}
 
 		up = new PX4IO_Uploader;

@@ -39,6 +39,7 @@ px4_add_module(
 		LidarLite.cpp
 		LidarLiteI2C.cpp
 		LidarLitePWM.cpp
+		KalmanFilter.cpp
 	DEPENDS
 		platforms__common
 	)

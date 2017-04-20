@@ -69,14 +69,13 @@
 #include <uORB/topics/airspeed.h>
 #include <uORB/topics/vehicle_attitude.h>
 #include <uORB/topics/vehicle_local_position.h>
-#include <uORB/topics/vision_position_estimate.h>
 #include <uORB/topics/control_state.h>
 #include <uORB/topics/vehicle_global_position.h>
 #include <uORB/topics/wind_estimate.h>
 #include <uORB/topics/estimator_status.h>
 #include <uORB/topics/ekf2_innovations.h>
-#include <uORB/topics/actuator_armed.h>
 #include <uORB/topics/ekf2_replay.h>
+#include <uORB/topics/ekf2_timestamps.h>
 #include <uORB/topics/optical_flow.h>
 #include <uORB/topics/distance_sensor.h>
 #include <uORB/topics/vehicle_land_detected.h>
@@ -164,6 +163,7 @@ private:
 	orb_advert_t _estimator_status_pub;
 	orb_advert_t _estimator_innovations_pub;
 	orb_advert_t _replay_pub;
+	orb_advert_t _ekf2_timestamps_pub;
 
 	/* Low pass filter for attitude rates */
 	math::LowPassFilter2p _lp_roll_rate;
@@ -235,6 +235,7 @@ private:
 	control::BlockParamExtFloat _range_noise;		// observation noise for range finder measurements (m)
 	control::BlockParamExtFloat _range_innov_gate;	// range finder fusion innovation consistency gate size (STD)
 	control::BlockParamExtFloat _rng_gnd_clearance;	// minimum valid value for range when on ground (m)
+	control::BlockParamExtFloat _rng_pitch_offset;	// range sensor pitch offset (rad)
 
 	// vision estimate fusion
 	control::BlockParamExtFloat _ev_pos_noise;		// default position observation noise for exernal vision measurements (m)
@@ -289,7 +290,7 @@ private:
 };
 
 Ekf2::Ekf2():
-	SuperBlock(NULL, "EKF"),
+	SuperBlock(nullptr, "EKF"),
 	_replay_mode(false),
 	_publish_replay_mode(0),
 	_att_pub(nullptr),
@@ -300,6 +301,7 @@ Ekf2::Ekf2():
 	_estimator_status_pub(nullptr),
 	_estimator_innovations_pub(nullptr),
 	_replay_pub(nullptr),
+	_ekf2_timestamps_pub(nullptr),
 	_lp_roll_rate(250.0f, 30.0f),
 	_lp_pitch_rate(250.0f, 30.0f),
 	_lp_yaw_rate(250.0f, 20.0f),
@@ -353,6 +355,7 @@ Ekf2::Ekf2():
 	_range_noise(this, "EKF2_RNG_NOISE", false, _params->range_noise),
 	_range_innov_gate(this, "EKF2_RNG_GATE", false, _params->range_innov_gate),
 	_rng_gnd_clearance(this, "EKF2_MIN_RNG", false, _params->rng_gnd_clearance),
+	_rng_pitch_offset(this, "EKF2_RNG_PITCH", false, _params->rng_sens_pitch),
 	_ev_pos_noise(this, "EKF2_EVP_NOISE", false, _default_ev_pos_noise),
 	_ev_ang_noise(this, "EKF2_EVA_NOISE", false, _default_ev_ang_noise),
 	_ev_innov_gate(this, "EKF2_EV_GATE", false, _params->ev_innov_gate),
@@ -408,7 +411,8 @@ void Ekf2::task_main()
 	int params_sub = orb_subscribe(ORB_ID(parameter_update));
 	int optical_flow_sub = orb_subscribe(ORB_ID(optical_flow));
 	int range_finder_sub = orb_subscribe(ORB_ID(distance_sensor));
-	int ev_pos_sub = orb_subscribe(ORB_ID(vision_position_estimate));
+	int ev_pos_sub = orb_subscribe(ORB_ID(vehicle_vision_position));
+	int ev_att_sub = orb_subscribe(ORB_ID(vehicle_vision_attitude));
 	int vehicle_land_detected_sub = orb_subscribe(ORB_ID(vehicle_land_detected));
 	int status_sub = orb_subscribe(ORB_ID(vehicle_status));
 
@@ -430,7 +434,8 @@ void Ekf2::task_main()
 	optical_flow_s optical_flow = {};
 	distance_sensor_s range_finder = {};
 	vehicle_land_detected_s vehicle_land_detected = {};
-	vision_position_estimate_s ev = {};
+	vehicle_local_position_s ev_pos = {};
+	vehicle_attitude_s ev_att = {};
 	vehicle_status_s vehicle_status = {};
 
 	while (!_task_should_exit) {
@@ -466,6 +471,7 @@ void Ekf2::task_main()
 		bool range_finder_updated = false;
 		bool vehicle_land_detected_updated = false;
 		bool vision_position_updated = false;
+		bool vision_attitude_updated = false;
 		bool vehicle_status_updated = false;
 
 		orb_copy(ORB_ID(sensor_combined), sensors_sub, &sensors);
@@ -509,7 +515,13 @@ void Ekf2::task_main()
 		orb_check(ev_pos_sub, &vision_position_updated);
 
 		if (vision_position_updated) {
-			orb_copy(ORB_ID(vision_position_estimate), ev_pos_sub, &ev);
+			orb_copy(ORB_ID(vehicle_vision_position), ev_pos_sub, &ev_pos);
+		}
+
+		orb_check(ev_att_sub, &vision_attitude_updated);
+
+		if (vision_attitude_updated) {
+			orb_copy(ORB_ID(vehicle_vision_attitude), ev_att_sub, &ev_att);
 		}
 
 		// in replay mode we are getting the actual timestamp from the sensor topic
@@ -554,7 +566,7 @@ void Ekf2::task_main()
 
 				if (mag_time_ms - _mag_time_ms_last_used > _params->sensor_interval_min_ms) {
 					float mag_sample_count_inv = 1.0f / (float)_mag_sample_count;
-					float mag_data_avg_ga[3] = {_mag_data_sum[0] *mag_sample_count_inv , _mag_data_sum[1] *mag_sample_count_inv , _mag_data_sum[2] *mag_sample_count_inv};
+					float mag_data_avg_ga[3] = {_mag_data_sum[0] *mag_sample_count_inv, _mag_data_sum[1] *mag_sample_count_inv, _mag_data_sum[2] *mag_sample_count_inv};
 					_ekf.setMagData(1000 * (uint64_t)mag_time_ms, mag_data_avg_ga);
 					_mag_time_ms_last_used = mag_time_ms;
 					_mag_time_sum_ms = 0;
@@ -585,7 +597,7 @@ void Ekf2::task_main()
 
 				if (balt_time_ms - _balt_time_ms_last_used > (uint32_t)_params->sensor_interval_min_ms) {
 					float balt_data_avg = _balt_data_sum / (float)_balt_sample_count;
-					_ekf.setBaroData(1000 * (uint64_t)balt_time_ms, &balt_data_avg);
+					_ekf.setBaroData(1000 * (uint64_t)balt_time_ms, balt_data_avg);
 					_balt_time_ms_last_used = balt_time_ms;
 					_balt_time_sum_ms = 0;
 					_balt_sample_count = 0;
@@ -625,7 +637,7 @@ void Ekf2::task_main()
 
 		if (fuse_airspeed) {
 			float eas2tas = airspeed.true_airspeed_m_s / airspeed.indicated_airspeed_m_s;
-			_ekf.setAirspeedData(airspeed.timestamp, &airspeed.true_airspeed_m_s, &eas2tas);
+			_ekf.setAirspeedData(airspeed.timestamp, airspeed.true_airspeed_m_s, eas2tas);
 		}
 
 		// only fuse synthetic sideslip measurements if conditions are met
@@ -649,37 +661,25 @@ void Ekf2::task_main()
 		}
 
 		if (range_finder_updated) {
-			_ekf.setRangeData(range_finder.timestamp, &range_finder.current_distance);
+			_ekf.setRangeData(range_finder.timestamp, range_finder.current_distance);
 		}
 
 		// get external vision data
 		// if error estimates are unavailable, use parameter defined defaults
-		if (vision_position_updated) {
+		if (vision_position_updated || vision_attitude_updated) {
 			ext_vision_message ev_data;
-			ev_data.posNED(0) = ev.x;
-			ev_data.posNED(1) = ev.y;
-			ev_data.posNED(2) = ev.z;
-			Quaternion q(ev.q);
+			ev_data.posNED(0) = ev_pos.x;
+			ev_data.posNED(1) = ev_pos.y;
+			ev_data.posNED(2) = ev_pos.z;
+			Quaternion q(ev_att.q);
 			ev_data.quat = q;
 
-			// position measurement error
-			if (ev.pos_err >= 0.001f) {
-				ev_data.posErr = ev.pos_err;
-
-			} else {
-				ev_data.posErr = _default_ev_pos_noise;
-			}
-
-			// angle measurement error
-			if (ev.ang_err >= 0.001f) {
-				ev_data.angErr = ev.ang_err;
-
-			} else {
-				ev_data.angErr = _default_ev_ang_noise;
-			}
+			// position measurement error from parameters. TODO : use covariances from topic
+			ev_data.posErr = _default_ev_pos_noise;
+			ev_data.angErr = _default_ev_ang_noise;
 
 			// use timestamp from external computer, clocks are synchronized when using MAVROS
-			_ekf.setExtVisionData(ev.timestamp, &ev_data);
+			_ekf.setExtVisionData(vision_position_updated ? ev_pos.timestamp : ev_att.timestamp, &ev_data);
 		}
 
 		orb_check(vehicle_land_detected_sub, &vehicle_land_detected_updated);
@@ -705,13 +705,16 @@ void Ekf2::task_main()
 				control_state_s ctrl_state = {};
 				float gyro_bias[3] = {};
 				_ekf.get_gyro_bias(gyro_bias);
-				ctrl_state.timestamp = hrt_absolute_time();
+				ctrl_state.timestamp = _replay_mode ? now : hrt_absolute_time();
 				gyro_rad[0] = sensors.gyro_rad[0] - gyro_bias[0];
 				gyro_rad[1] = sensors.gyro_rad[1] - gyro_bias[1];
 				gyro_rad[2] = sensors.gyro_rad[2] - gyro_bias[2];
 				ctrl_state.roll_rate = _lp_roll_rate.apply(gyro_rad[0]);
 				ctrl_state.pitch_rate = _lp_pitch_rate.apply(gyro_rad[1]);
 				ctrl_state.yaw_rate = _lp_yaw_rate.apply(gyro_rad[2]);
+				ctrl_state.roll_rate_bias = gyro_bias[0];
+				ctrl_state.pitch_rate_bias = gyro_bias[1];
+				ctrl_state.yaw_rate_bias = gyro_bias[2];
 
 				// Velocity in body frame
 				Vector3f v_n(velocity);
@@ -730,10 +733,7 @@ void Ekf2::task_main()
 				ctrl_state.z_pos = position[2];
 
 				// Attitude quaternion
-				ctrl_state.q[0] = q(0);
-				ctrl_state.q[1] = q(1);
-				ctrl_state.q[2] = q(2);
-				ctrl_state.q[3] = q(3);
+				q.copyTo(ctrl_state.q);
 
 				_ekf.get_quat_reset(&ctrl_state.delta_q_reset[0], &ctrl_state.quat_reset_counter);
 
@@ -787,12 +787,9 @@ void Ekf2::task_main()
 			{
 				// generate vehicle attitude quaternion data
 				struct vehicle_attitude_s att = {};
-				att.timestamp = hrt_absolute_time();
+				att.timestamp = _replay_mode ? now : hrt_absolute_time();
 
-				att.q[0] = q(0);
-				att.q[1] = q(1);
-				att.q[2] = q(2);
-				att.q[3] = q(3);
+				q.copyTo(att.q);
 
 				att.rollspeed = gyro_rad[0];
 				att.pitchspeed = gyro_rad[1];
@@ -811,7 +808,7 @@ void Ekf2::task_main()
 			struct vehicle_local_position_s lpos = {};
 			float pos[3] = {};
 
-			lpos.timestamp = hrt_absolute_time();
+			lpos.timestamp = _replay_mode ? now : hrt_absolute_time();
 
 			// Position of body origin in local NED frame
 			_ekf.get_position(pos);
@@ -853,8 +850,8 @@ void Ekf2::task_main()
 			Vector3f pos_var, vel_var;
 			_ekf.get_pos_var(pos_var);
 			_ekf.get_vel_var(vel_var);
-			lpos.eph = sqrt(pos_var(0) + pos_var(1));
-			lpos.epv = sqrt(pos_var(2));
+			lpos.eph = sqrtf(pos_var(0) + pos_var(1));
+			lpos.epv = sqrtf(pos_var(2));
 
 			// get state reset information of position and velocity
 			_ekf.get_posD_reset(&lpos.delta_z, &lpos.z_reset_counter);
@@ -874,7 +871,7 @@ void Ekf2::task_main()
 				// generate and publish global position data
 				struct vehicle_global_position_s global_pos = {};
 
-				global_pos.timestamp = hrt_absolute_time(); // Time of this estimate, in microseconds since system start
+				global_pos.timestamp = _replay_mode ? now : hrt_absolute_time();
 				global_pos.time_utc_usec = gps.time_utc_usec; // GPS UTC timestamp in microseconds
 
 				double est_lat, est_lon, lat_pre_reset, lon_pre_reset;
@@ -896,10 +893,10 @@ void Ekf2::task_main()
 				global_pos.vel_e = velocity[1]; // Ground east velocity, m/s
 				global_pos.vel_d = velocity[2]; // Ground downside velocity, m/s
 
-				global_pos.yaw = euler(2); // Yaw in radians -PI..+PI.
+				global_pos.yaw = euler.psi(); // Yaw in radians -PI..+PI.
 
-				global_pos.eph = sqrt(pos_var(0) + pos_var(1));; // Standard deviation of position estimate horizontally
-				global_pos.epv = sqrt(pos_var(2)); // Standard deviation of position vertically
+				global_pos.eph = sqrtf(pos_var(0) + pos_var(1));; // Standard deviation of position estimate horizontally
+				global_pos.epv = sqrtf(pos_var(2)); // Standard deviation of position vertically
 
 				if (lpos.dist_bottom_valid) {
 					global_pos.terrain_alt = lpos.ref_alt - terrain_vpos; // Terrain altitude in m, WGS84
@@ -927,7 +924,7 @@ void Ekf2::task_main()
 			// in replay mode we have to tell the replay module not to wait for an update
 			// we do this by publishing an attitude with zero timestamp
 			struct vehicle_attitude_s att = {};
-			att.timestamp = 0;
+			att.timestamp = now;
 
 			if (_att_pub == nullptr) {
 				_att_pub = orb_advertise(ORB_ID(vehicle_attitude), &att);
@@ -939,7 +936,7 @@ void Ekf2::task_main()
 
 		// publish estimator status
 		struct estimator_status_s status = {};
-		status.timestamp = hrt_absolute_time();
+		status.timestamp = _replay_mode ? now : hrt_absolute_time();
 		_ekf.get_state_delayed(status.states);
 		_ekf.get_covariances(status.covariances);
 		_ekf.get_gps_check_status(&status.gps_check_fail_flags);
@@ -963,7 +960,7 @@ void Ekf2::task_main()
 
 		// Publish wind estimate
 		struct wind_estimate_s wind_estimate = {};
-		wind_estimate.timestamp = hrt_absolute_time();
+		wind_estimate.timestamp = _replay_mode ? now : hrt_absolute_time();
 		wind_estimate.windspeed_north = status.states[22];
 		wind_estimate.windspeed_east = status.states[23];
 		wind_estimate.covariance_north = status.covariances[22];
@@ -979,7 +976,7 @@ void Ekf2::task_main()
 		// publish estimator innovation data
 		{
 			struct ekf2_innovations_s innovations = {};
-			innovations.timestamp = hrt_absolute_time();
+			innovations.timestamp = _replay_mode ? now : hrt_absolute_time();
 			_ekf.get_vel_pos_innov(&innovations.vel_pos_innov[0]);
 			_ekf.get_mag_innov(&innovations.mag_innov[0]);
 			_ekf.get_heading_innov(&innovations.heading_innov);
@@ -1016,12 +1013,74 @@ void Ekf2::task_main()
 
 		_prev_landed = vehicle_land_detected.landed;
 
+		// publish ekf2_timestamps (using 0.1 ms relative timestamps)
+		{
+			ekf2_timestamps_s ekf2_timestamps;
+			ekf2_timestamps.timestamp = sensors.timestamp;
+
+			if (gps_updated) {
+				// divide individually to get consistent rounding behavior
+				ekf2_timestamps.gps_timestamp_rel = (int16_t)((int64_t)gps.timestamp / 100 - (int64_t)ekf2_timestamps.timestamp / 100);
+
+			} else {
+				ekf2_timestamps.gps_timestamp_rel = ekf2_timestamps_s::RELATIVE_TIMESTAMP_INVALID;
+			}
+
+			if (optical_flow_updated) {
+				ekf2_timestamps.optical_flow_timestamp_rel = (int16_t)((int64_t)optical_flow.timestamp / 100 -
+						(int64_t)ekf2_timestamps.timestamp / 100);
+
+			} else {
+				ekf2_timestamps.optical_flow_timestamp_rel = ekf2_timestamps_s::RELATIVE_TIMESTAMP_INVALID;
+			}
+
+			if (range_finder_updated) {
+				ekf2_timestamps.distance_sensor_timestamp_rel = (int16_t)((int64_t)range_finder.timestamp / 100 -
+						(int64_t)ekf2_timestamps.timestamp / 100);
+
+			} else {
+				ekf2_timestamps.distance_sensor_timestamp_rel = ekf2_timestamps_s::RELATIVE_TIMESTAMP_INVALID;
+			}
+
+			if (airspeed_updated) {
+				ekf2_timestamps.airspeed_timestamp_rel = (int16_t)((int64_t)airspeed.timestamp / 100 -
+						(int64_t)ekf2_timestamps.timestamp / 100);
+
+			} else {
+				ekf2_timestamps.airspeed_timestamp_rel = ekf2_timestamps_s::RELATIVE_TIMESTAMP_INVALID;
+			}
+
+			if (vision_position_updated) {
+				ekf2_timestamps.vision_position_timestamp_rel = (int16_t)((int64_t)ev_pos.timestamp / 100 -
+						(int64_t)ekf2_timestamps.timestamp / 100);
+
+			} else {
+				ekf2_timestamps.vision_position_timestamp_rel = ekf2_timestamps_s::RELATIVE_TIMESTAMP_INVALID;
+			}
+
+			if (vision_attitude_updated) {
+				ekf2_timestamps.vision_attitude_timestamp_rel = (int16_t)((int64_t)ev_att.timestamp / 100 -
+						(int64_t)ekf2_timestamps.timestamp / 100);
+
+			} else {
+				ekf2_timestamps.vision_attitude_timestamp_rel = ekf2_timestamps_s::RELATIVE_TIMESTAMP_INVALID;
+			}
+
+			if (_ekf2_timestamps_pub == nullptr) {
+				_ekf2_timestamps_pub = orb_advertise(ORB_ID(ekf2_timestamps), &ekf2_timestamps);
+
+			} else {
+				orb_publish(ORB_ID(ekf2_timestamps), _ekf2_timestamps_pub, &ekf2_timestamps);
+			}
+		}
+
+
 		// publish replay message if in replay mode
 		bool publish_replay_message = (bool)_param_record_replay_msg.get();
 
 		if (publish_replay_message) {
 			struct ekf2_replay_s replay = {};
-			replay.time_ref = now;
+			replay.timestamp = now;
 			replay.gyro_integral_dt = sensors.gyro_integral_dt;
 			replay.accelerometer_integral_dt = sensors.accelerometer_integral_dt;
 			replay.magnetometer_timestamp = _timestamp_mag_us;
@@ -1034,7 +1093,6 @@ void Ekf2::task_main()
 			// only write gps data if we had a gps update.
 			if (gps_updated) {
 				replay.time_usec = gps.timestamp;
-				replay.time_usec_vel = gps.timestamp;
 				replay.lat = gps.lat;
 				replay.lon = gps.lon;
 				replay.alt = gps.alt;
@@ -1084,17 +1142,18 @@ void Ekf2::task_main()
 				replay.asp_timestamp = 0;
 			}
 
-			if (vision_position_updated) {
-				replay.ev_timestamp = ev.timestamp;
-				replay.pos_ev[0] = ev.x;
-				replay.pos_ev[1] = ev.y;
-				replay.pos_ev[2] = ev.z;
-				replay.quat_ev[0] = ev.q[0];
-				replay.quat_ev[1] = ev.q[1];
-				replay.quat_ev[2] = ev.q[2];
-				replay.quat_ev[3] = ev.q[3];
-				replay.pos_err = ev.pos_err;
-				replay.ang_err = ev.ang_err;
+			if (vision_position_updated || vision_attitude_updated) {
+				replay.ev_timestamp = vision_position_updated ? ev_pos.timestamp : ev_att.timestamp;
+				replay.pos_ev[0] = ev_pos.x;
+				replay.pos_ev[1] = ev_pos.y;
+				replay.pos_ev[2] = ev_pos.z;
+				replay.quat_ev[0] = ev_att.q[0];
+				replay.quat_ev[1] = ev_att.q[1];
+				replay.quat_ev[2] = ev_att.q[2];
+				replay.quat_ev[3] = ev_att.q[3];
+				// TODO : switch to covariances from topic later
+				replay.pos_err = _default_ev_pos_noise;
+				replay.ang_err = _default_ev_ang_noise;
 
 			} else {
 				replay.ev_timestamp = 0;

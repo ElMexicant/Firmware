@@ -49,6 +49,17 @@
 #include <drivers/drv_hrt.h>
 #include <drivers/drv_pwm_input.h>
 
+#define SEC2USEC		1000000.0f
+#define ACC_UNC			0.1f
+#define LIDAR_UNC		0.1f
+#define POS_UNC_INIT	0.1f
+#define VEL_UNC_INIT	0.2f
+
+#include <systemlib/mavlink_log.h> //rickyremove
+extern orb_advert_t mavlink_log_pub;//rickyremove
+
+namespace ll40ls {
+
 LidarLitePWM::LidarLitePWM(const char *path) :
 	CDev("LidarLitePWM", path),
 	_work{},
@@ -56,6 +67,10 @@ LidarLitePWM::LidarLitePWM(const char *path) :
 	_class_instance(-1),
 	_orb_class_instance(-1),
 	_pwmSub(-1),
+	_sensorCombinedSub(-1),
+	_estimator_initialized(false), // make this true
+	_sensorCombined_valid(false), // make this true
+	_last_predict(0),
 	_pwm{},
 	_distance_sensor_topic(nullptr),
 	_range{},
@@ -175,15 +190,63 @@ int LidarLitePWM::measure()
 		return PX4_ERROR;
 	}
 
-	_range.timestamp = hrt_absolute_time();
-	_range.type = distance_sensor_s::MAV_DISTANCE_SENSOR_LASER;
-	_range.max_distance = get_maximum_distance();
-	_range.min_distance = get_minimum_distance();
-	_range.current_distance = float(_pwm.pulse_width) * 1e-3f;   /* 10 usec = 1 cm distance for LIDAR-Lite */
-	_range.covariance = 0.0f;
-	_range.orientation = 8;
-	/* TODO: set proper ID */
-	_range.id = 0;
+	if (_estimator_initialized) {
+		_update_topics(); //rickyremove
+		// predict
+		// only run prediction if filter has been initialized
+		// use the best estimate of the vehicle acceleration to predict the lidar position
+
+		float dt = (hrt_absolute_time() - _last_predict) / SEC2USEC;
+
+		// predict agl position with the help of accel data
+		float acc;
+
+		if (_sensorCombined_valid) {
+			acc = _sensorCombined.accelerometer_m_s2[2] + 9.80665f;
+			if (acc < .07f || acc > -.07f) {
+				acc = 0.0f;
+			}
+			_sensorCombined_valid = false;
+		} else {
+			acc = 0.0f;
+		}
+		//mavlink_and_console_log_info(&mavlink_log_pub, "[lidar] %4.4f", double(acc));
+		_kalman_filter.predict(dt, -acc, ACC_UNC);
+
+		_last_predict = hrt_absolute_time();
+	}
+
+	if (!_estimator_initialized) {
+		// too long since last measurement, reset filter
+
+		_initialize_topics();//rickyremove to elsewhere
+
+		PX4_WARN("Init");
+		_kalman_filter.init(0, 0, POS_UNC_INIT, VEL_UNC_INIT);
+
+		_estimator_initialized = true;
+		_last_predict = hrt_absolute_time();
+	} else {
+		_kalman_filter.update(float(_pwm.pulse_width) * 1e-3f, POS_UNC_INIT);
+
+		_range.timestamp = hrt_absolute_time();
+		float z, zvel, covz, covz_v;
+		_kalman_filter.getState(z, zvel);
+		_kalman_filter.getCovariance(covz, covz_v);
+
+		_range.timestamp = hrt_absolute_time();
+		_range.type = distance_sensor_s::MAV_DISTANCE_SENSOR_LASER;
+		_range.max_distance = get_maximum_distance();
+		_range.min_distance = get_minimum_distance();
+		_range.previous_distance = _range.current_distance;
+		_range.current_distance = z;
+		_range.covariance = covz;
+		_range.orientation = 8;
+		_range.dv = -zvel;
+			//(_range.previous_distance - _range.current_distance) / .05f;
+		/* TODO: set proper ID */
+		_range.id = 0;
+	}
 
 	/* Due to a bug in older versions of the LidarLite firmware, we have to reset sensor on (distance == 0) */
 	if (_range.current_distance <= 0.0f) {
@@ -287,3 +350,36 @@ int LidarLitePWM::reset_sensor()
 	::close(fd);
 	return ret;
 }
+
+void LidarLitePWM::_initialize_topics()
+{
+	_sensorCombinedSub = orb_subscribe(ORB_ID(sensor_combined));
+}
+
+void LidarLitePWM::_update_topics()
+{
+	_sensorCombined_valid = _orb_update(ORB_ID(sensor_combined), _sensorCombinedSub, &_sensorCombined);
+}
+
+
+bool LidarLitePWM::_orb_update(const struct orb_metadata *meta, int handle, void *buffer)
+{
+	bool newData = false;
+
+	// check if there is new data to grab
+	if (orb_check(handle, &newData) != OK) {
+		return false;
+	}
+
+	if (!newData) {
+		return false;
+	}
+
+	if (orb_copy(meta, handle, buffer) != OK) {
+		return false;
+	}
+
+	return true;
+}
+
+}// namespace ll40ls

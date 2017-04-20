@@ -44,6 +44,14 @@
 #include <controllib/blocks.hpp>
 #include <controllib/block/BlockParam.hpp>
 
+#include <uORB/uORB.h>
+#include <uORB/topics/position_setpoint_triplet.h>
+#include <uORB/topics/vehicle_local_position.h>
+#include <uORB/topics/beacon_position.h>
+
+#include <modules/beacon_position_estimator/BeaconPositionEstimator.h>
+#include <modules/local_position_estimator/BlockLocalPositionEstimator.hpp>
+
 #include "navigator_mode.h"
 #include "mission_block.h"
 
@@ -60,6 +68,33 @@ public:
 
 	virtual void on_active();
 
+private:
+	/** 	VARIABLE DECLARATIONS	**/
+	// ints for topic subscribing
+	int _vehicleLocalPositionSub;
+	int _beaconPositionSub;
+	int _distanceSub;
+
+	// booleans for topic updates
+	bool _new_vehicleLocalPosition;
+	bool _new_beaconPosition;
+	bool _new_distance;
+
+	// structs to hold topics
+	struct vehicle_local_position_s		_vehicleLocalPosition;
+	struct beacon_position_s 		_beacon_position;
+	struct distance_sensor_s		_ground_distance;
+
+	
+	/**	METHOD DECLARATIONS	**/
+	// one time call to initialize topics
+	void initialize_topics();
+	
+	// method to update topics
+	void update_topics();
+
+	// convenience method to check for topic updates 
+	bool _orb_update(const struct orb_metadata *meta, int handle, void *buffer);
 };
 
 #endif

@@ -35,11 +35,10 @@
 
 #include "log_writer.h"
 #include "array.h"
-#include <px4.h>
+#include <px4_defines.h>
 #include <drivers/drv_hrt.h>
 #include <uORB/Subscription.hpp>
 #include <version/version.h>
-#include <systemlib/git_version.h>
 #include <systemlib/param/param.h>
 
 extern "C" __EXPORT int logger_main(int argc, char *argv[]);
@@ -83,8 +82,8 @@ struct LoggerSubscription {
 class Logger
 {
 public:
-	Logger(LogWriter::Backend backend, size_t buffer_size, uint32_t log_interval, bool log_on_start,
-	       bool log_until_shutdown, bool log_name_timestamp, unsigned int queue_size);
+	Logger(LogWriter::Backend backend, size_t buffer_size, uint32_t log_interval, const char *poll_topic_name,
+	       bool log_on_start, bool log_until_shutdown, bool log_name_timestamp, unsigned int queue_size);
 
 	~Logger();
 
@@ -100,7 +99,7 @@ public:
 	 * (because it does not write an ADD_LOGGED_MSG message).
 	 * @param name topic name
 	 * @param interval limit rate if >0, otherwise log as fast as the topic is updated.
-	 * @return 0 on success
+	 * @return -1 on error, file descriptor otherwise
 	 */
 	int add_topic(const char *name, unsigned interval);
 
@@ -182,6 +181,11 @@ private:
 
 	void write_info(const char *name, const char *value);
 	void write_info(const char *name, int32_t value);
+	void write_info(const char *name, uint32_t value);
+
+	/** generic common template method for write_info variants */
+	template<typename T>
+	void write_info_template(const char *name, T value, const char *type_str);
 
 	void write_parameters();
 
@@ -212,13 +216,14 @@ private:
 	int add_topics_from_file(const char *fname);
 
 	void add_default_topics();
+	void add_calibration_topics();
 
 	void ack_vehicle_command(orb_advert_t &vehicle_command_ack_pub, uint16_t command, uint32_t result);
 
 	static constexpr size_t 	MAX_TOPICS_NUM = 64; /**< Maximum number of logged topics */
 	static constexpr unsigned	MAX_NO_LOGFOLDER = 999;	/**< Maximum number of log dirs */
 	static constexpr unsigned	MAX_NO_LOGFILE = 999;	/**< Maximum number of log files */
-#ifdef __PX4_POSIX_EAGLE
+#if defined(__PX4_POSIX_EAGLE) || defined(__PX4_POSIX_EXCELSIOR)
 	static constexpr const char	*LOG_ROOT = PX4_ROOTFSDIR"/log";
 #else
 	static constexpr const char 	*LOG_ROOT = PX4_ROOTFSDIR"/fs/microsd/log";
@@ -247,10 +252,16 @@ private:
 	Array<LoggerSubscription, MAX_TOPICS_NUM>	_subscriptions;
 	LogWriter					_writer;
 	uint32_t					_log_interval;
+	const orb_metadata				*_polling_topic_meta = nullptr; ///< if non-null, poll on this topic instead of sleeping
 	param_t						_log_utc_offset;
 	orb_advert_t					_mavlink_log_pub = nullptr;
 	uint16_t					_next_topic_id = 0; ///< id of next subscribed ulog topic
 	char						*_replay_file_name = nullptr;
+
+	// control
+	param_t _sdlog_mode_handle;
+	int32_t _sdlog_mode;
+
 };
 
 } //namespace logger

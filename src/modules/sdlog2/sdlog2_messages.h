@@ -634,6 +634,13 @@ struct log_DPRS_s {
 	float temperature;
 };
 
+/* --- LOW STACK --- */
+#define LOG_STCK_MSG 63
+struct log_STCK_s {
+	char task_name[16];
+	uint16_t stack_free;
+};
+
 /********** SYSTEM MESSAGES, ID > 0x80 **********/
 
 /* --- TIME - TIME STAMP --- */
@@ -652,7 +659,7 @@ struct log_VER_s {
 /* --- PARM - PARAMETER --- */
 #define LOG_PARM_MSG 131
 struct log_PARM_s {
-	char name[16];
+	char name[64];
 	float value;
 };
 #pragma pack(pop)
@@ -724,11 +731,12 @@ static const struct log_format_s log_formats[] = {
 	LOG_FORMAT(LAND, "B", "Landed"),
 	LOG_FORMAT(LOAD, "f", "CPU"),
 	LOG_FORMAT(DPRS, "Qffff", "errors,DPRESraw,DPRES,DPRESmax,Temp"),
+	LOG_FORMAT(STCK, "NH", "Task,Free"),
 	/* system-level messages, ID >= 0x80 */
 	/* FMT: don't write format of format message, it's useless */
 	LOG_FORMAT(TIME, "Q", "StartTime"),
 	LOG_FORMAT(VER, "NZ", "Arch,FwGit"),
-	LOG_FORMAT(PARM, "Nf", "Name,Value")
+	LOG_FORMAT(PARM, "Zf", "Name,Value")
 };
 
 static const unsigned log_formats_num = sizeof(log_formats) / sizeof(log_formats[0]);

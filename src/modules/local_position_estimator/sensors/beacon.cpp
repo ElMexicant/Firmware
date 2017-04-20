@@ -106,8 +106,8 @@ void BlockLocalPositionEstimator::beaconCorrect()
 		float beta = (r.transpose()  * (S_I * r))(0, 0);
 
 		if (beta > BETA_TABLE[n_y_beacon]) {
-			if (_beaconFault < FAULT_MINOR) {
-				_beaconFault = FAULT_MINOR;
+			if (!(_sensorFault & SENSOR_BEACON)) {
+				//_beaconFault = FAULT_MINOR; rickyremove
 				mavlink_and_console_log_info(&mavlink_log_pub, "[lpe] beacon fault,  beta %5.2f", double(beta));
 				PX4_WARN("beacon fault,  beta %5.2f", double(beta));
 			}
@@ -115,18 +115,18 @@ void BlockLocalPositionEstimator::beaconCorrect()
 			// abort correction
 			return;
 
-		} else if (_beaconFault) {
-			_beaconFault = FAULT_NONE;
+		} else if (_sensorFault & SENSOR_LAND) {
+			//_beaconFault = FAULT_NONE; rickyremove
 			mavlink_and_console_log_info(&mavlink_log_pub, "[lpe] beacon OK");
 			PX4_WARN("[lpe] beacon OK");
 		}
 
 		// kalman filter correction if no fault
-		if (_beaconFault < fault_lvl_disable) {
+		if (_sensorFault & SENSOR_LAND) { //rickyremove changed if statement
 			Matrix<float, n_x, n_y_beacon> K =
 				_P * C.transpose() * S_I;
 			Vector<float, n_x> dx = K * r;
-			correctionLogic(dx);
+			//correctionLogic(dx); rickyremove deprictated I think?
 			// PX4_WARN("correcting with %f %f", dx(0), dx(1));
 			_x += dx;
 			_P -= K * C * _P;

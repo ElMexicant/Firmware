@@ -52,7 +52,7 @@
  * @value 1 Stationary
  * @value 2 Known Position
  */
-PARAM_DEFINE_INT32(BEST_MODE, 0);
+PARAM_DEFINE_INT32(BEST_MODE, 1);
 
 /**
  * Latitude coordinate of beacon. Only used if BEST_MODE is set to Known Position

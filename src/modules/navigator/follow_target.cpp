@@ -100,8 +100,6 @@ void FollowTarget::on_inactive()
 
 void FollowTarget::on_activation()
 {
-	updateParams();
-
 	_follow_offset = _param_tracking_dist.get() < 1.0F ? 1.0F : _param_tracking_dist.get();
 
 	_responsiveness = math::constrain((float) _param_tracking_resp.get(), .1F, 1.0F);
@@ -311,7 +309,7 @@ void FollowTarget::on_active()
 
 			} else if (target_velocity_valid()) {
 
-				if ((current_time - _last_update_time) / 1000 >= _step_time_in_ms) {
+				if ((float)(current_time - _last_update_time) / 1000.0f >= _step_time_in_ms) {
 					_current_vel += _step_vel;
 					_last_update_time = current_time;
 				}

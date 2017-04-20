@@ -44,6 +44,7 @@
 #pragma once
 
 #include "LidarLite.h"
+#include "KalmanFilter.h"
 
 #include <nuttx/wqueue.h>
 #include <nuttx/clock.h>
@@ -54,8 +55,12 @@
 #include <uORB/uORB.h>
 #include <uORB/topics/pwm_input.h>
 #include <uORB/topics/distance_sensor.h>
+#include <uORB/topics/sensor_combined.h>
 
+#include <controllib/blocks.hpp>
+#include <controllib/block/BlockParam.hpp>
 
+namespace ll40ls {
 
 class LidarLitePWM : public LidarLite, public device::CDev
 {
@@ -104,18 +109,37 @@ protected:
 
 	void task_main_trampoline(int argc, char *argv[]);
 
+	void _initialize_topics();
+
+	void _update_topics();
+
+	bool _orb_update(const struct orb_metadata *meta, int handle, void *buffer);
+
 private:
 	work_s			_work;
 	ringbuffer::RingBuffer	*_reports;
 	int			_class_instance;
 	int			_orb_class_instance;
 	int			_pwmSub;
+	int			_sensorCombinedSub;
+	bool		_estimator_initialized;//rickyremove
+	bool		_sensorCombined_valid;
+	float		_last_predict;
+
 	struct pwm_input_s	_pwm;
 	orb_advert_t	        _distance_sensor_topic;
 	struct distance_sensor_s _range;
+	struct vehicle_attitude_s			_vehicleAttitude; //rickyremove and below
+	struct sensor_combined_s			_sensorCombined;
+
+	matrix::Dcm<float> _R_att;
 
 	perf_counter_t	        _sample_perf;
 	perf_counter_t	        _read_errors;
 	perf_counter_t	        _buffer_overflows;
 	perf_counter_t	        _sensor_zero_resets;
+
+	KalmanFilter			_kalman_filter;
 };
+
+}// namespace ll40ls

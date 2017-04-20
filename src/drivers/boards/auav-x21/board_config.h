@@ -47,16 +47,13 @@
 #include <nuttx/compiler.h>
 #include <stdint.h>
 
-#include <stm32.h>
-#include <arch/board/board.h>
-
-#define UDID_START		0x1FFF7A10
 /****************************************************************************************************
  * Definitions
  ****************************************************************************************************/
 /* Configuration ************************************************************************************/
 
 /* PX4IO connection configuration */
+#define BOARD_USES_PX4IO_VERSION       2
 #define PX4IO_SERIAL_DEVICE	"/dev/ttyS4"
 #define PX4IO_SERIAL_TX_GPIO	GPIO_USART6_TX
 #define PX4IO_SERIAL_RX_GPIO	GPIO_USART6_RX
@@ -78,11 +75,11 @@
 
 /* Data ready pins but on board */
 
-#define GPIO_EXTI_ICM_20608_G_DRDY      (GPIO_INPUT|GPIO_FLOAT|GPIO_EXTI|GPIO_PORTC|GPIO_PIN14)
+#define GPIO_EXTI_ICM_2060X_DRDY      (GPIO_INPUT|GPIO_FLOAT|GPIO_EXTI|GPIO_PORTC|GPIO_PIN14)
 
 /* Data ready pins off */
 #define GPIO_EXTI_MPU_DRDY_OFF          (GPIO_INPUT|GPIO_PULLDOWN|GPIO_EXTI|GPIO_PORTD|GPIO_PIN15)
-#define GPIO_EXTI_ICM_20608_G_DRDY_OFF  (GPIO_INPUT|GPIO_PULLDOWN|GPIO_EXTI|GPIO_PORTC|GPIO_PIN14)
+#define GPIO_EXTI_ICM_2060X_DRDY_OFF  (GPIO_INPUT|GPIO_PULLDOWN|GPIO_EXTI|GPIO_PORTC|GPIO_PIN14)
 
 /* SPI1 off */
 #define GPIO_SPI1_SCK_OFF   (GPIO_INPUT|GPIO_PULLDOWN|GPIO_PORTA|GPIO_PIN5)
@@ -90,12 +87,12 @@
 #define GPIO_SPI1_MOSI_OFF  (GPIO_INPUT|GPIO_PULLDOWN|GPIO_PORTA|GPIO_PIN7)
 
 /* SPI1 chip selects off */
-#define GPIO_SPI_CS_ICM_20608_G_OFF (GPIO_INPUT|GPIO_PULLDOWN|GPIO_SPEED_2MHz|GPIO_PORTC|GPIO_PIN15)
+#define GPIO_SPI_CS_ICM_2060X_OFF (GPIO_INPUT|GPIO_PULLDOWN|GPIO_SPEED_2MHz|GPIO_PORTC|GPIO_PIN15)
 #define GPIO_SPI_CS_BARO_OFF        (GPIO_INPUT|GPIO_PULLDOWN|GPIO_SPEED_2MHz|GPIO_PORTD|GPIO_PIN7)
 #define GPIO_SPI_CS_MPU_OFF		    (GPIO_INPUT|GPIO_PULLDOWN|GPIO_SPEED_2MHz|GPIO_PORTC|GPIO_PIN2)
 
 /* SPI chip selects */
-#define GPIO_SPI_CS_ICM_20608_G  (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_2MHz|GPIO_OUTPUT_SET|GPIO_PORTC|GPIO_PIN15)
+#define GPIO_SPI_CS_ICM_2060X	 (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_2MHz|GPIO_OUTPUT_SET|GPIO_PORTC|GPIO_PIN15)
 #define GPIO_SPI_CS_BARO         (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_2MHz|GPIO_OUTPUT_SET|GPIO_PORTD|GPIO_PIN7)
 #define GPIO_SPI_CS_FRAM         (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_2MHz|GPIO_OUTPUT_SET|GPIO_PORTD|GPIO_PIN10)
 #define GPIO_SPI_CS_MPU          (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_2MHz|GPIO_OUTPUT_SET|GPIO_PORTC|GPIO_PIN2)
@@ -105,9 +102,10 @@
 #define PX4_SPI_BUS_BARO	PX4_SPI_BUS_SENSORS
 
 /* Use these in place of the spi_dev_e enumeration to select a specific SPI device on SPI1 */
-#define PX4_SPIDEV_ICM       1
-#define PX4_SPIDEV_BARO      2
-#define PX4_SPIDEV_MPU       3
+#define PX4_SPIDEV_ICM_20602 1
+#define PX4_SPIDEV_ICM_20608 2
+#define PX4_SPIDEV_BARO      3
+#define PX4_SPIDEV_MPU       4
 
 /* I2C busses */
 
@@ -236,6 +234,23 @@
 		{GPIO_VDD_BRICK_VALID,   0,                       0}, \
 		{GPIO_VDD_5V_PERIPH_OC,  0,                       0}, }
 
+/*
+ * GPIO numbers.
+ *
+ * There are no alternate functions on this board.
+ */
+
+#define GPIO_SERVO_1          (1<<0)  /**< servo 1 output */
+#define GPIO_SERVO_2          (1<<1)  /**< servo 2 output */
+#define GPIO_SERVO_3          (1<<2)  /**< servo 3 output */
+#define GPIO_SERVO_4          (1<<3)  /**< servo 4 output */
+#define GPIO_SERVO_5          (1<<4)  /**< servo 5 output */
+#define GPIO_SERVO_6          (1<<5)  /**< servo 6 output */
+
+#define GPIO_3V3_SENSORS_EN   (1<<6)  /**< PE3 - VDD_3V3_SENSORS_EN */
+#define GPIO_BRICK_VALID      (1<<7)  /**< PB5 - !VDD_BRICK_VALID */
+#define GPIO_5V_PERIPH_OC     (1<<8) /**< PE10 - !VDD_5V_PERIPH_OC */
+
 /* This board provides a DMA pool and APIs */
 #define BOARD_DMA_ALLOC_POOL_SIZE 5120
 
@@ -254,6 +269,26 @@ __BEGIN_DECLS
 /****************************************************************************************************
  * Public Functions
  ****************************************************************************************************/
+/****************************************************************************************************
+ * Name: board_spi_reset board_peripheral_reset
+ *
+ * Description:
+ *   Called to reset SPI and the perferal bus
+ *
+ ****************************************************************************************************/
+
+extern void board_spi_reset(int ms);
+extern void board_peripheral_reset(int ms);
+
+/****************************************************************************************************
+ * Name: stm32_usbinitialize
+ *
+ * Description:
+ *   Called to configure USB IO.
+ *
+ ****************************************************************************************************/
+
+extern void stm32_usbinitialize(void);
 
 /****************************************************************************************************
  * Name: stm32_spiinitialize
@@ -264,30 +299,6 @@ __BEGIN_DECLS
  ****************************************************************************************************/
 
 extern void stm32_spiinitialize(void);
-extern void board_spi_reset(int ms);
-
-extern void stm32_usbinitialize(void);
-
-extern void board_peripheral_reset(int ms);
-
-/****************************************************************************
- * Name: nsh_archinitialize
- *
- * Description:
- *   Perform architecture specific initialization for NSH.
- *
- *   CONFIG_NSH_ARCHINIT=y :
- *     Called from the NSH library
- *
- *   CONFIG_BOARD_INITIALIZE=y, CONFIG_NSH_LIBRARY=y, &&
- *   CONFIG_NSH_ARCHINIT=n :
- *     Called from board_initialize().
- *
- ****************************************************************************/
-
-#ifdef CONFIG_NSH_LIBRARY
-int nsh_archinitialize(void);
-#endif
 
 #include "../common/board_common.h"
 

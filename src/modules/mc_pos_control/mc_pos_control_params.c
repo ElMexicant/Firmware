@@ -214,7 +214,7 @@ PARAM_DEFINE_FLOAT(MPC_Z_VEL_MAX_UP, 3.0f);
  * @max 4.0
  * @group Multicopter Position Control
  */
-PARAM_DEFINE_FLOAT(MPC_Z_VEL_MAX, 1.0f);
+PARAM_DEFINE_FLOAT(MPC_Z_VEL_MAX, 0.5f);
 
 /**
  * Transitional support, do not change / use
@@ -357,7 +357,37 @@ PARAM_DEFINE_FLOAT(MPC_TILTMAX_LND, 12.0f);
  * @decimal 1
  * @group Multicopter Position Control
  */
-PARAM_DEFINE_FLOAT(MPC_LAND_SPEED, 0.5f);
+PARAM_DEFINE_FLOAT(MPC_LAND_SPEED, 0.2f);
+
+/**
+ * Final approach altitude
+ *
+ * Slow down landing descent to final approach speed if below final approach altitude.
+ *
+ * @unit meters
+ * @min 0.0
+ * @decimal 2
+ * @group Multicopter Position Control
+ */
+PARAM_DEFINE_FLOAT(MPC_FNA_ALT, 2.0f);
+
+/**
+ * Final approach speed
+ *
+ * @unit m/s
+ * @min 0.0
+ * @decimal 2
+ * @group Multicopter Position Control
+ */
+PARAM_DEFINE_FLOAT(MPC_FNA_SPD, 0.2f);
+
+/**
+ * Final approach: use terrain estimate only if available
+ *
+ * @boolean
+ * @group Multicopter Position Control
+ */
+PARAM_DEFINE_INT32(MPC_FNA_USE_TER, 1);
 
 /**
  * Takeoff climb rate
@@ -413,6 +443,17 @@ PARAM_DEFINE_FLOAT(MPC_MAN_Y_MAX, 200.0f);
  */
 PARAM_DEFINE_FLOAT(MPC_HOLD_XY_DZ, 0.1f);
 
+
+/**
+ * Deadzone of Z stick where altitude hold is enabled
+ *
+ * @min 0.0
+ * @max 1.0
+ * @decimal 2
+ * @group Multicopter Position Control
+ */
+PARAM_DEFINE_FLOAT(MPC_HOLD_Z_DZ, 0.1f);
+
 /**
  * Maximum horizontal velocity for which position hold is enabled (use 0 to disable check)
  *
@@ -459,6 +500,30 @@ PARAM_DEFINE_FLOAT(MPC_VELD_LP, 5.0f);
 PARAM_DEFINE_FLOAT(MPC_ACC_HOR_MAX, 5.0f);
 
 /**
+ * Maximum vertical acceleration in velocity controlled modes upward
+ *
+ * @unit m/s/s
+ * @min 2.0
+ * @max 15.0
+ * @increment 1
+ * @decimal 2
+ * @group Multicopter Position Control
+ */
+PARAM_DEFINE_FLOAT(MPC_ACC_UP_MAX, 5.0f);
+
+/**
+ * Maximum vertical acceleration in velocity controlled modes down
+ *
+ * @unit m/s/s
+ * @min 2.0
+ * @max 15.0
+ * @increment 1
+ * @decimal 2
+ * @group Multicopter Position Control
+ */
+PARAM_DEFINE_FLOAT(MPC_ACC_DOWN_MAX, 5.0f);
+
+/**
  * Altitude control mode, note mode 1 only tested with LPE
  *
  * @min 0
@@ -467,4 +532,19 @@ PARAM_DEFINE_FLOAT(MPC_ACC_HOR_MAX, 5.0f);
  * @value 1 Terrain following
  * @group Multicopter Position Control
  */
-PARAM_DEFINE_INT32(MPC_ALT_MODE, 0);
+PARAM_DEFINE_INT32(MPC_ALT_MODE, 1);
+
+/**
+ * Manual control stick exponential curve sensitivity attenuation with small velocity setpoints
+ *
+ * The higher the value the less sensitivity the stick has around zero
+ * while still reaching the maximum value with full stick deflection.
+ *
+ * @min 0
+ * @max 1
+ * @value 0 Purely linear input curve (default)
+ * @value 1 Purely cubic input curve
+ * @decimal 2
+ * @group Multicopter Position Control
+ */
+PARAM_DEFINE_FLOAT(MPC_XY_MAN_EXPO, 0.0f);

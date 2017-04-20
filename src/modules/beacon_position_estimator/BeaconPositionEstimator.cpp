@@ -45,7 +45,6 @@
 
 #define SEC2USEC 1000000.0f
 
-
 namespace beacon_position_estimator
 {
 
@@ -161,8 +160,8 @@ void BeaconPositionEstimator::_cycle()
 		// default orientation has camera x pointing in body y, camera y in body -x
 
 		matrix::Vector<float, 3> sensor_ray; // ray pointing towards beacon in body frame
-		sensor_ray(0) = -_irlockReport.pos_y;//_irlockReport.pos_x; // forward
-		sensor_ray(1) = _irlockReport.pos_x;//_irlockReport.pos_y; // right
+		sensor_ray(0) = _irlockReport.pos_x; // forward
+		sensor_ray(1) = _irlockReport.pos_y; // right
 		sensor_ray(2) = 1.0f;
 
 		// rotate the unit ray into the navigation frame, assume sensor frame = body frame
